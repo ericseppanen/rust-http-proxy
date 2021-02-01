@@ -40,19 +40,15 @@ where
             n = socket1.read(&mut buffer1) => {
                 let n = n?;
                 if n == 0 {
-                    println!("EOF on socket1");
                     return Ok(())
                 }
-                println!("got {} bytes on socket1", n);
                 socket2.write(&buffer1[..n]).await?;
             }
             n = socket2.read(&mut buffer2) => {
                 let n = n?;
                 if n == 0 {
-                    println!("EOF on socket2");
                     return Ok(())
                 }
-                println!("got {} bytes on socket2", n);
                 socket1.write(&buffer2[..n]).await?;
             }
         }
@@ -70,8 +66,6 @@ async fn process_socket<T>(mut client_socket: T, config: &Config) -> io::Result<
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    println!("got new socket");
-
     // Read the HTTP request from the network.
     let http_request = get_http_request(&mut client_socket).await?;
     // Parse the HTTP request to get the target host+port.
@@ -98,7 +92,7 @@ where
     let response = "HTTP/1.0 200 Connection Established\r\n\r\n";
     client_socket.write(response.as_bytes()).await?;
 
-    println!("start proxy now");
+    println!("remote connection successful, proxy active");
 
     proxy(client_socket, target_socket, config).await?;
 
@@ -146,8 +140,7 @@ fn parse_http_connect(request_buf: &[u8]) -> Result<String, &'static str> {
     let mut headers = [httparse::EMPTY_HEADER; MAX_HTTP_HEADERS];
     let mut request = httparse::Request::new(&mut headers);
     let parse_result = request.parse(request_buf);
-    if let Err(e) = parse_result {
-        println!("{:#?}", e);
+    if parse_result.is_err() {
         return Err("failed to parse http request");
     }
     if request.method != Some("CONNECT") {
@@ -200,9 +193,9 @@ async fn main() -> io::Result<()> {
 
         // Accept new connections and spawn their handler into the background.
         loop {
-            let (socket, _socket_addr) = listener.accept().await?;
+            let (socket, socket_addr) = listener.accept().await?;
+            println!("new connection from {}", socket_addr);
             // TODO: implement a limit on concurrent connections.
-            // TODO: log socket_addr?
 
             tokio::spawn(tls_accept(tls_acceptor.clone(), socket, &config));
         }
@@ -218,9 +211,10 @@ async fn main() -> io::Result<()> {
 
         // Accept new connections and spawn their handler into the background.
         loop {
-            let (socket, _socket_addr) = listener.accept().await?;
+            let (socket, socket_addr) = listener.accept().await?;
+            println!("new connection from {}", socket_addr);
+
             // TODO: implement a limit on concurrent connections.
-            // TODO: log socket_addr?
 
             tokio::spawn(process_socket(socket, &config));
         }
