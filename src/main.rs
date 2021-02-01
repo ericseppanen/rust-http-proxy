@@ -1,7 +1,11 @@
 use config::Config;
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use std::sync::Arc;
+use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::rustls::{NoClientAuth, ServerConfig};
+use tokio_rustls::TlsAcceptor;
 
+mod certs;
 mod config;
 
 // The number of bytes we can read at once while proxying.
@@ -17,7 +21,10 @@ const MAX_HTTP_HEADERS: usize = 16;
 //
 // This does the heavy lifting of the proxy service, so it should
 // be implemented as efficiently as possible.
-async fn proxy(mut socket1: TcpStream, mut socket2: TcpStream, _config: &Config) -> io::Result<()> {
+async fn proxy<T>(mut socket1: T, mut socket2: TcpStream, _config: &Config) -> io::Result<()>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
     // As this is an async fn, these buffers will actually be part of the Future's
     // state, so they are allocated on the heap.
     let mut buffer1 = [0u8; BUFFER_SIZE];
@@ -59,7 +66,10 @@ async fn proxy(mut socket1: TcpStream, mut socket2: TcpStream, _config: &Config)
 // Note: while this returns a Result, if this is spawned directly into the
 // executor, meaning that its result will never be seen. If its result is
 // interesting, perhaps a logging wrapper should be used.
-async fn process_socket(mut client_socket: TcpStream, config: &Config) -> io::Result<()> {
+async fn process_socket<T>(mut client_socket: T, config: &Config) -> io::Result<()>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
     println!("got new socket");
 
     // Read the HTTP request from the network.
@@ -97,7 +107,10 @@ async fn process_socket(mut client_socket: TcpStream, config: &Config) -> io::Re
 
 // Get an http request from the network
 // Parse the request, and return the host string if it's a CONNECT.
-async fn get_http_request(socket: &mut TcpStream) -> io::Result<Vec<u8>> {
+async fn get_http_request<T>(socket: &mut T) -> io::Result<Vec<u8>>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
     // It would be nice to be able to not initialize this buffer, since
     // we're just going to overwrite it. Something like read_buf (Rust
     // RFC 2930) would be nice.
@@ -149,17 +162,67 @@ fn parse_http_connect(request_buf: &[u8]) -> Result<String, &'static str> {
     Ok(target)
 }
 
+// Perform the TLS handshake, and then hand off the rest of the communication.
+async fn tls_accept(
+    acceptor: TlsAcceptor,
+    socket: TcpStream,
+    config: &'static Config,
+) -> io::Result<()> {
+    let tls_stream = acceptor.accept(socket).await.map_err(|e| {
+        println!("tls stream failed to initialize: {:?}", e);
+        e
+    })?;
+    process_socket(tls_stream, &config).await
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let config = Config::read_config_file()?;
 
-    println!("listening on {}:{}", config.local_addr, config.local_port);
-    let listener = TcpListener::bind((config.local_addr, config.local_port)).await?;
+    if config.use_tls {
+        let (cert_chain, private_key) = config.get_cert_filenames()?;
 
-    loop {
-        let (socket, _socket_addr) = listener.accept().await?;
-        // TODO: implement a limit on concurrent connections.
-        // TODO: log socket_addr?
-        tokio::spawn(process_socket(socket, &config));
+        // Load the TLS certificate chain and private key
+        let tls_certs = certs::load_certs(cert_chain)?;
+        let private_key = certs::load_private_key(private_key)?;
+
+        // Set up the TLS server machinery.
+        let mut tls_server_config = ServerConfig::new(NoClientAuth::new());
+        tls_server_config
+            .set_single_cert(tls_certs, private_key)
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "tls server config error"))?;
+        let tls_server_config = Arc::new(tls_server_config);
+        let tls_acceptor = TlsAcceptor::from(tls_server_config);
+
+        // Start listening on the TCP socket
+        println!("listening on {}:{}", config.local_addr, config.local_port);
+        let listener = TcpListener::bind((config.local_addr, config.local_port)).await?;
+
+        // Accept new connections and spawn their handler into the background.
+        loop {
+            let (socket, _socket_addr) = listener.accept().await?;
+            // TODO: implement a limit on concurrent connections.
+            // TODO: log socket_addr?
+
+            tokio::spawn(tls_accept(tls_acceptor.clone(), socket, &config));
+        }
+    } else {
+        // This path is used if config.use_tls is false.
+        // The client connection will be unencrypted (plaintext TCP).
+        // This might be tolerable, if we don't care that an observer can see
+        // what remote server is being requested.
+
+        // Start listening on the TCP socket
+        println!("listening on {}:{}", config.local_addr, config.local_port);
+        let listener = TcpListener::bind((config.local_addr, config.local_port)).await?;
+
+        // Accept new connections and spawn their handler into the background.
+        loop {
+            let (socket, _socket_addr) = listener.accept().await?;
+            // TODO: implement a limit on concurrent connections.
+            // TODO: log socket_addr?
+
+            tokio::spawn(process_socket(socket, &config));
+        }
     }
 }

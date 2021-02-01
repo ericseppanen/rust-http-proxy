@@ -1,6 +1,7 @@
 use serde::Deserialize;
-use std::net::IpAddr;
 use std::io;
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Once;
 
 const CONFIG_FILE: &str = "./http_proxy_config.toml";
@@ -33,6 +34,12 @@ pub struct Config {
     pub local_port: u16,
     /// The list of servers (host+port) that we will allow a connection to.
     pub allowed_servers: Vec<String>,
+    /// Should the client<->proxy connection use TLS?
+    pub use_tls: bool,
+    /// A file containing our TLS certificate chain, in PEM format.
+    pub cert_chain: Option<PathBuf>,
+    /// A file containing our private key, in PEM format.
+    pub private_key: Option<PathBuf>,
 }
 
 impl Config {
@@ -55,5 +62,18 @@ impl Config {
             }
         }
         false
+    }
+
+    /// Retrieve the cert and key filenames.
+    ///
+    /// Returns an error if either are None.
+    pub fn get_cert_filenames(&self) -> io::Result<(&Path, &Path)> {
+        match (&self.cert_chain, &self.private_key) {
+            (Some(cert), Some(key)) => Ok((cert, key)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "missing cert or key filename",
+            )),
+        }
     }
 }

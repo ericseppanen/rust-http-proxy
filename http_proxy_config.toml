@@ -4,3 +4,11 @@ local_port = 8080
 
 # A list of remote servers we will permit proxying to
 allowed_servers = [ "www.google.com:443" ]
+
+# Enable TLS on the client-to-proxy connection
+use_tls = false
+
+# TLS certificate and private key, in PEM format.
+# Only RSA keys in pkcs8 format are supported.
+#cert_chain = "server_chain.pem"
+#private_key = "server_priv_key.pem"
