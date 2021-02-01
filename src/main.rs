@@ -68,7 +68,13 @@ async fn process_socket(mut client_socket: TcpStream, config: &Config) -> io::Re
     let target_host =
         parse_http_connect(&http_request).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    // FIXME: check whether target host is on our allow list.
+    // Check whether target host is on our allow list.
+    if !config.is_server_allowed(&target_host) {
+        println!("deny access to server {:?}", target_host);
+        let response = "HTTP/1.0 403 Forbidden\r\n\r\n";
+        client_socket.write(response.as_bytes()).await?;
+        return Err(io::Error::new(io::ErrorKind::Other, "disallowed host"));
+    }
 
     // make a new TCP connection to the target
     // TODO: cache DNS results
@@ -148,7 +154,7 @@ async fn main() -> io::Result<()> {
     let config = Config::read_config_file();
 
     println!("listening on {}:{}", config.local_addr, config.local_port);
-    let listener = TcpListener::bind((config.local_addr.as_str(), config.local_port)).await?;
+    let listener = TcpListener::bind((config.local_addr, config.local_port)).await?;
 
     loop {
         let (socket, _socket_addr) = listener.accept().await?;
