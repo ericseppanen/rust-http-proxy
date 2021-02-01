@@ -151,7 +151,7 @@ fn parse_http_connect(request_buf: &[u8]) -> Result<String, &'static str> {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let config = Config::read_config_file();
+    let config = Config::read_config_file()?;
 
     println!("listening on {}:{}", config.local_addr, config.local_port);
     let listener = TcpListener::bind((config.local_addr, config.local_port)).await?;

@@ -1,6 +1,9 @@
 use serde::Deserialize;
 use std::net::IpAddr;
+use std::io;
 use std::sync::Once;
+
+const CONFIG_FILE: &str = "./http_proxy_config.toml";
 
 static mut GLOBAL_CONFIG: Option<Config> = None;
 static INIT_CONFIG: Once = Once::new();
@@ -25,7 +28,7 @@ fn init_global_config(config: Config) -> &'static Config {
 #[derive(Deserialize)]
 pub struct Config {
     /// The IP address of the local interface to listen on (e.g. 127.0.0.1)
-    pub local_addr: IpAddr, // FIXME: make this an IPAddr
+    pub local_addr: IpAddr,
     /// The local TCP port to bind to
     pub local_port: u16,
     /// The list of servers (host+port) that we will allow a connection to.
@@ -33,14 +36,16 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn read_config_file() -> &'static Config {
-        // FIXME: read this from a file.
-        let config = Config {
-            local_addr: "127.0.0.1".parse().unwrap(),
-            local_port: 8080,
-            allowed_servers: vec!["www.google.com:443".into()],
-        };
-        init_global_config(config)
+    pub fn read_config_file() -> io::Result<&'static Config> {
+        let config_data = std::fs::read_to_string(CONFIG_FILE).map_err(|e| {
+            eprintln!("failed to load toml config file");
+            e
+        })?;
+
+        let config = toml::from_str(&config_data).map_err(|_| {
+            io::Error::new(io::ErrorKind::Other, "failed to parse toml config file")
+        })?;
+        Ok(init_global_config(config))
     }
 
     pub fn is_server_allowed(&self, requested: &str) -> bool {

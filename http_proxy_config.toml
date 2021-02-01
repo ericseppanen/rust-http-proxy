@@ -1,0 +1,6 @@
+# The local host and port number to listen on
+local_addr = "127.0.0.1"
+local_port = 8080
+
+# A list of remote servers we will permit proxying to
+allowed_servers = [ "www.google.com:443" ]
