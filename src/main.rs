@@ -2,7 +2,7 @@ use config::Config;
 use std::sync::Arc;
 use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::rustls::{NoClientAuth, ServerConfig};
+use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
 mod certs;
@@ -180,9 +180,9 @@ async fn main() -> io::Result<()> {
         let private_key = certs::load_private_key(private_key)?;
 
         // Set up the TLS server machinery.
-        let mut tls_server_config = ServerConfig::new(NoClientAuth::new());
-        tls_server_config
-            .set_single_cert(tls_certs, private_key)
+        let tls_server_config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(tls_certs, private_key)
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "tls server config error"))?;
         let tls_server_config = Arc::new(tls_server_config);
         let tls_acceptor = TlsAcceptor::from(tls_server_config);
