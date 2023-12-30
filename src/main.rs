@@ -42,14 +42,14 @@ where
                 if n == 0 {
                     return Ok(())
                 }
-                socket2.write(&buffer1[..n]).await?;
+                socket2.write_all(&buffer1[..n]).await?;
             }
             n = socket2.read(&mut buffer2) => {
                 let n = n?;
                 if n == 0 {
                     return Ok(())
                 }
-                socket1.write(&buffer2[..n]).await?;
+                socket1.write_all(&buffer2[..n]).await?;
             }
         }
     }
@@ -76,7 +76,7 @@ where
     if !config.is_server_allowed(&target_host) {
         println!("deny access to server {:?}", target_host);
         let response = "HTTP/1.0 403 Forbidden\r\n\r\n";
-        client_socket.write(response.as_bytes()).await?;
+        client_socket.write_all(response.as_bytes()).await?;
         return Err(io::Error::new(io::ErrorKind::Other, "disallowed host"));
     }
 
@@ -90,7 +90,7 @@ where
 
     // We're now connected to the target host. Tell the client we're ready.
     let response = "HTTP/1.0 200 Connection Established\r\n\r\n";
-    client_socket.write(response.as_bytes()).await?;
+    client_socket.write_all(response.as_bytes()).await?;
 
     println!("remote connection successful, proxy active");
 
