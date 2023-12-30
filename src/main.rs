@@ -165,7 +165,7 @@ async fn tls_accept(
         println!("tls stream failed to initialize: {:?}", e);
         e
     })?;
-    process_socket(tls_stream, &config).await
+    process_socket(tls_stream, config).await
 }
 
 #[tokio::main]
@@ -197,7 +197,7 @@ async fn main() -> io::Result<()> {
             println!("new connection from {}", socket_addr);
             // TODO: implement a limit on concurrent connections.
 
-            tokio::spawn(tls_accept(tls_acceptor.clone(), socket, &config));
+            tokio::spawn(tls_accept(tls_acceptor.clone(), socket, config));
         }
     } else {
         // This path is used if config.use_tls is false.
@@ -216,7 +216,7 @@ async fn main() -> io::Result<()> {
 
             // TODO: implement a limit on concurrent connections.
 
-            tokio::spawn(process_socket(socket, &config));
+            tokio::spawn(process_socket(socket, config));
         }
     }
 }
